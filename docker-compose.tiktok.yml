@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  tiktok-scraper:
+    image: ghcr.io/rippleai-agency/tiktok:latest  # GHCR image
+    container_name: tiktok-scraper
+    restart: unless-stopped
+    env_file:
+      - .env  # Loads environment variables from your local .env file
+    ports:
+      - "3000:3000"  # Adjust to your app's port
+    volumes:
+      - ./data:/usr/src/app/data  # optional, mount if app uses file input/output
+    networks:
+      - scraper-net
+
+networks:
+  scraper-net:
+    driver: bridge
+

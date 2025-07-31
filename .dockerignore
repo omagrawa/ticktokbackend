@@ -1,0 +1,21 @@
+# Don't copy node_modules - always install fresh inside Docker
+node_modules
+
+# Optional: prevent lock file from being copied
+package-lock.json
+
+# Ignore environment files (if not needed inside image)
+.env
+.env.local
+
+# Git and system metadata
+.git
+.gitignore
+Dockerfile
+.dockerignore
+
+# OS-specific files
+*.log
+*.swp
+*.DS_Store
+Thumbs.db
