@@ -14,7 +14,7 @@ COPY package.json ./
 RUN npm install
 
 COPY . .
-
+RUN npm rebuild @tensorflow/tfjs-node --build-from-source
 EXPOSE 3000
 
 CMD ["npm", "start"]
