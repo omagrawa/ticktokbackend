@@ -6,7 +6,8 @@ const {
   processExcelFile,
   getJobData,
   deleteData,
-  creatorData
+  creatorData,
+  getSheetDataController
 } = require('../controllers/scrapeController');
 
 const router = express.Router();
@@ -32,5 +33,7 @@ router.get('/jobs/creator/:jobId', creatorData);
 router.get('/', (req, res) => {
   res.json({ message: 'Welcome to the TikTok Scrapper API!' });
 });
+
+router.get('/jobs/sheet', getSheetDataController);
 
 module.exports = router;

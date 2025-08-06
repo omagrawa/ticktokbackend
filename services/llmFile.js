@@ -120,7 +120,7 @@ try{
     if(istemp) deleteFile(finalFile);
 
     const completion = await model.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "user",

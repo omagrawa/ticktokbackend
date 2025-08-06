@@ -2,6 +2,9 @@ const xlsx = require('xlsx');
 const Job = require('../models/jobModel');
 const ScrapData = require('../models/scrapData');
 const ProfileData = require('../models/profileModel');
+const CreatorSheetData = require('../models/creatorSheet');
+const ContentSheetData = require('../models/contentSheet');
+const mongoose = require('mongoose');
 const fs = require('fs');
 const { toktokScraper, profileScraper, } = require('../services/apifyService');
 const Joi = require('joi');
@@ -372,7 +375,7 @@ function chunkArray(array, size) {
 }
 
 // function for internal call of the apify service
-const scrapeControllerFunction = async (jobId, filters) => {
+const scrapeControllerFunction = async (jobId, filters, agents) => {
     try {
         // console.log("0")
         // Extract filters from the input
@@ -428,8 +431,16 @@ const scrapeControllerFunction = async (jobId, filters) => {
         }
         // console.log("2")
         // console.log('Query Payload:', queryPayload);
-                  await Job.findByIdAndUpdate(jobId,
-                    { $set: { creatorStatus: 'Not Active',contentStatus:'Active' } },
+        let update = {};
+        if(agents.toLowerCase() === 'creator'){
+            update={ $set: { creatorStatus: "Active", contentStatus: 'Not Active' } }
+        }else if(agents.toLowerCase() === 'content'){
+            update={ $set: { creatorStatus: "Not Active", contentStatus: 'Active' } }
+        }else{
+            update={ $set: { creatorStatus: "Not Active", contentStatus: 'Active' } }
+        }
+          await Job.findByIdAndUpdate(jobId,
+                    update,
                     { new: true, runValidators: true }
                 );
         // Call the Apify scraper service
@@ -668,10 +679,29 @@ const scrapeControllerFunction = async (jobId, filters) => {
 
         // call the profile scrapper function here . 
         if (enrichedData.length > 0) {
-            await Job.findByIdAndUpdate(jobId,
-                { $set: { sheetUrl: "", status: 'Content Scrapped', creatorStatus: "Not Active" } },
-                { new: true, runValidators: true }
-            );
+            if (agents.toLowerCase() === 'creator') {
+                // console.log("Calling profile scrapper function");
+                await Job.findByIdAndUpdate(jobId,
+                    { $set: { status: 'Profile Scrapper Active', creatorStatus: "Active" } },
+                    { new: true, runValidators: true }
+                );
+            }
+            else if (agents.toLowerCase() === 'content') {
+                // console.log("Calling profile scrapper function");
+                await Job.findByIdAndUpdate(jobId,
+                    { $set: { status: 'Content Scrapper Active', creatorStatus: "Not Active" } },
+                    { new: true, runValidators: true }
+                );
+            } else {
+                // console.log("Calling profile scrapper function");
+                await Job.findByIdAndUpdate(jobId,
+                    { $set: { status: 'Content Scrapper Active', creatorStatus: "Not Active" } },
+                    { new: true, runValidators: true }  )
+        }
+            // await Job.findByIdAndUpdate(jobId,
+            //     { $set: { sheetUrl: "", status: 'Content Scrapped', creatorStatus: "Not Active" } },
+            //     { new: true, runValidators: true }
+            // );
             const profileScrapperData = await profileScrapperFunction(jobId, enrichedData)
 
             output = enrichedData.map(item => {
@@ -741,12 +771,20 @@ const scrapeControllerFunction = async (jobId, filters) => {
             });
 
             // Create enriched creator dataset
-            //   const creatorDataset = await createEnrichedCreatorDataset(profileScrapperData, output);
+            let creatorDataset=[]
+            // if(agents.toLowerCase() === 'creator' || agents.toLowerCase() === 'both'){
+                creatorDataset = await createEnrichedCreatorDataset(profileScrapperData, output);
+            // }
 
             try {
 
                 // new content url 
                 const newUrl = `${process.env.WORKFLOW_NEW_DATA}?jobId=${jobId}`;
+
+                // save the  data into the table for the creator sheet . 
+                const enrichedOutput = output.map(item => ({ ...item, jobId }));
+                await ContentSheetData.insertMany(enrichedOutput);
+
                 // Ensure output is properly stringified for transmission
                 const response = await axios.post(newUrl, JSON.stringify(output), {
                     headers: {
@@ -756,29 +794,37 @@ const scrapeControllerFunction = async (jobId, filters) => {
                 // console.log("response new flow", response.data.url);
                 // console.log('Calling n8n flow at URL:', n8nFlowUrl);
 
+                if(agents.toLowerCase() === 'content' || agents.toLowerCase() === 'both'){
 
                 await Job.findByIdAndUpdate(jobId,
                     { $set: { finalSheetUrl: response.data.url, status: 'Completed', contentStatus: 'Completed', } },
                     { new: true, runValidators: true }
                 );
+            }
 
-
+            const enrichedCreatorDataset = creatorDataset.map(item => ({ ...item, jobId }));
                 // console.log("creatorDataset", creatorDataset);
+             await CreatorSheetData.insertMany(enrichedCreatorDataset);
 
                 // new creator agent url 
-                // const newUrlCreator = `${process.env.WORKFLOW_CREATOR}?jobId=${jobId}`;
-                // const responseCreator = await axios.post(newUrlCreator, JSON.stringify(creatorDataset), {
-                //     headers: {
-                //         'Content-Type': 'application/json'
-                //     }
-                // });
+                if(agents.toLowerCase() === 'creator' || agents.toLowerCase() === 'both'){
+                    
+                const newUrlCreator = `${process.env.WORKFLOW_CREATOR}?jobId=${jobId}`;
+                const responseCreator = await axios.post(newUrlCreator, JSON.stringify(creatorDataset), {
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
 
-                // // console.log("response new flow", response.data);
-                // // console.log('Calling n8n flow at URL:', responseCreator.data.url);
-                // await Job.findByIdAndUpdate(jobId,
-                //     { $set: { creatorSheetUrl: responseCreator.data.url, status: 'Completed', creatorStatus: "Completed" } },
-                //     { new: true, runValidators: true }
-                // );
+                // console.log("response new flow", response.data);
+                // console.log('Calling n8n flow at URL:', responseCreator.data.url);
+                if(agents.toLowerCase() === 'creator' || agents.toLowerCase() === 'both') {
+                await Job.findByIdAndUpdate(jobId,
+                    { $set: { creatorSheetUrl: responseCreator.data.url, status: 'Completed', creatorStatus: "Completed" } },
+                    { new: true, runValidators: true }
+                );
+                }
+            }
             }
             catch (err) {
                 console.log("error", err);
@@ -809,10 +855,26 @@ const scrapeControllerFunction = async (jobId, filters) => {
         return 0;
     } catch (err) {
         console.error('Error in scrapeControllerFunction:', err);
-        await Job.findByIdAndUpdate(jobId,
-            { $set: { status: 'Failed', failedMessagge: err.message, contentStatus: 'Failed', creatorStatus: "Not Active" } },
-            { new: true, runValidators: true }
-        );
+        if( agents.toLowerCase() === 'creator'){
+            await Job.findByIdAndUpdate(jobId,
+                { $set: { status: 'Profile Scrapper Failed', creatorStatus: "Failed", failedMessage: err.message } },
+                { new: true, runValidators: true }
+            );  
+        }else if(agents.toLowerCase() === 'content'){
+            await Job.findByIdAndUpdate(jobId,
+                { $set: { status: 'Content Scrapper Failed', contentStatus: "Failed", failedMessage: err.message } },
+                { new: true, runValidators: true }
+            );
+        }else{
+            await Job.findByIdAndUpdate(jobId,
+                { $set: { status: 'Scrapper Failed', contentStatus: "Failed", creatorStatus: "Failed", failedMessage: err.message } },
+                { new: true, runValidators: true }
+            );
+        }
+        // await Job.findByIdAndUpdate(jobId,
+        //     { $set: { status: 'Failed', failedMessagge: err.message, contentStatus: 'Failed', creatorStatus: "Not Active" } },
+        //     { new: true, runValidators: true }
+        // );
         // throw new Error(err.message || 'Internal Server Error');
     }
 };
@@ -822,6 +884,10 @@ exports.processExcelFile = async (req, res) => {
     // console.log("File Path:", filePath);
     if (!filePath) {
         return res.status(400).json({ message: 'No file uploaded' });
+    }
+    let agents='both';
+    if(req.query.agent && (req.query.agent.toLowerCase() === 'creator' || req.query.agent.toLowerCase() === 'content')){
+        agents=req.query.agent
     }
 
     try {
@@ -855,7 +921,7 @@ exports.processExcelFile = async (req, res) => {
                     }))
                 });
             } else {
-                validatedData.push(value);
+                validatedData.push({...value, agents});
             }
         }
 
@@ -872,11 +938,23 @@ exports.processExcelFile = async (req, res) => {
         // Process each validated row
         for (let i = 0; i < validatedData.length; i++) {
             // console.log("Processing row:", validatedData[i]);
-            scrapeControllerFunction(jobDetails[i]._id, validatedData[i]);
-              await Job.findByIdAndUpdate(jobDetails[i]._id,
-                    { $set: { creatorStatus: 'Not Active',contentStatus:'Active' } },
+            scrapeControllerFunction(jobDetails[i]._id, validatedData[i],agents);
+            if(agents.toLowerCase() === 'creator'){
+                await Job.findByIdAndUpdate(jobDetails[i]._id,
+                    { $set: { creatorStatus: 'Active', contentStatus: 'Not Active' } },
                     { new: true, runValidators: true }
                 );
+            }else if(agents.toLowerCase() === 'content'){
+                await Job.findByIdAndUpdate(jobDetails[i]._id,
+                    { $set: { creatorStatus: 'Not Active', contentStatus: 'Active' } },
+                    { new: true, runValidators: true }
+                );
+            }else{  
+              await Job.findByIdAndUpdate(jobDetails[i]._id,
+                    { $set: { creatorStatus: 'Active',contentStatus:'Active' } },
+                    { new: true, runValidators: true }
+                );
+            }
         }
 
         res.status(200).json({
@@ -934,139 +1012,161 @@ exports.deleteData = async (req, res) => {
 };
 
 exports.creatorData=async(req,res)=>{
-     const { jobId } = req.params;
-        if (!jobId) {
+     const { jobId} = req.params;
+     const sheetType= req.query.sheetType;
+        if (!jobId && !sheetType) {
             return res.status(400).json({ message: 'jobId is required' });
         }
     try{
+        const job = await Job.findById(jobId);
+
+        if (!job) {
+            return res.status(404).json({ message: 'Job not found' });
+        }
+
+        console.log("job", job);
+        // new implemetnation 
+        if(job.status!='Failed' && sheetType && sheetType.toLowerCase() === 'creator'){
+            await Job.findByIdAndUpdate(jobId,
+                { $set: { status: 'Completed', creatorStatus: "Completed" ,agents:'Both' } },
+                { new: true, runValidators: true }
+            );
+        }
+
+        if(job.status!='Failed' && sheetType && sheetType.toLowerCase() === 'content'){ 
+            await Job.findByIdAndUpdate(jobId,
+                { $set: { status: 'Completed', contentStatus: "Completed" ,agents:'Both'} },
+                { new: true, runValidators: true }
+            );
+        }
        
-        // Fetch ScrapData (post scrapper collection) and ProfileData (profile scrapper collection) where jobId is equal
-        const [enrichedData,profileScrapperData] = await Promise.all([
-            ScrapData.find({ jobId }),
-            ProfileData.find({ jobId })
-        ]);
+        // // Fetch ScrapData (post scrapper collection) and ProfileData (profile scrapper collection) where jobId is equal
+        // const [enrichedData,profileScrapperData] = await Promise.all([
+        //     ScrapData.find({ jobId }),
+        //     ProfileData.find({ jobId })
+        // ]);
 
-        if(profileScrapperData.length==0){
-                     await Job.findByIdAndUpdate(jobId,
-                    { $set: { status: 'Completed', creatorStatus: "Completed" } },
-                    { new: true, runValidators: true }
-                );
+        // if(profileScrapperData.length==0){
+        //              await Job.findByIdAndUpdate(jobId,
+        //             { $set: { status: 'Completed', creatorStatus: "Completed" } },
+        //             { new: true, runValidators: true }
+        //         );
 
-            return res.status(200).json({ message: 'No Profile avaibale to scrap' });
-        }
-         await Job.findByIdAndUpdate(jobId,
-                    { $set: { status: 'Completed', creatorStatus: "Active" } },
-                    { new: true, runValidators: true }
-                );
+        //     return res.status(200).json({ message: 'No Profile avaibale to scrap' });
+        // }
+        //  await Job.findByIdAndUpdate(jobId,
+        //             { $set: { status: 'Completed', creatorStatus: "Active" } },
+        //             { new: true, runValidators: true }
+        //         );
 
 
 
-        let output=[]
-        // console.log(profileScrapperData,enrichedData)/
-        if (enrichedData.length > 0) {
-            // await Job.findByIdAndUpdate(jobId,
-            //     { $set: { sheetUrl: "", status: 'Content Scrapped', contentStatus: 'Completed', creatorStatus: "Not Active" } },
-            //     { new: true, runValidators: true }
-            // );
-            // const profileScrapperData = await profileScrapperFunction(jobId, enrichedData)
+        // let output=[]
+        // // console.log(profileScrapperData,enrichedData)/
+        // if (enrichedData.length > 0) {
+        //     // await Job.findByIdAndUpdate(jobId,
+        //     //     { $set: { sheetUrl: "", status: 'Content Scrapped', contentStatus: 'Completed', creatorStatus: "Not Active" } },
+        //     //     { new: true, runValidators: true }
+        //     // );
+        //     // const profileScrapperData = await profileScrapperFunction(jobId, enrichedData)
 
-            // console.log(enrichedData)
+        //     // console.log(enrichedData)
 
-            output = enrichedData.map(item => {
-                // Extract caption languages from subtitleLinks
-                let captionLanguages = '';
-                if (item.videoMeta && Array.isArray(item.videoMeta.subtitleLinks)) {
-                    captionLanguages = item.videoMeta.subtitleLinks.map(s => s.language).filter(Boolean).join(', ');
-                }
-                // Format upload date
-                let uploadDate = '';
-                if (item.createTime) {
-                    const d = new Date(item.createTime * 1000);
-                    uploadDate = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-                }
-                // Format numbers with commas
-                const formatNum = n => n !== undefined && n !== null ? n.toLocaleString() : '';
+        //     output = enrichedData.map(item => {
+        //         // Extract caption languages from subtitleLinks
+        //         let captionLanguages = '';
+        //         if (item.videoMeta && Array.isArray(item.videoMeta.subtitleLinks)) {
+        //             captionLanguages = item.videoMeta.subtitleLinks.map(s => s.language).filter(Boolean).join(', ');
+        //         }
+        //         // Format upload date
+        //         let uploadDate = '';
+        //         if (item.createTime) {
+        //             const d = new Date(item.createTime * 1000);
+        //             uploadDate = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+        //         }
+        //         // Format numbers with commas
+        //         const formatNum = n => n !== undefined && n !== null ? n.toLocaleString() : '';
 
-                // console.log("item", item);
-                return {
-                    Thumbnail: item?.videoMeta?.coverUrl ? item.videoMeta.coverUrl : '',
-                    'Video Link': item.webVideoUrl || '',
-                    Platform: 'TikTok',
-                    'Content Type': item.isAd ? 'Ad' : 'Organic',
-                    'Upload Date': uploadDate,
-                    'Video Duration (sec)': item.videoMeta.duration ? item.videoMeta.duration : '',
-                    'Language (Audio)': item.audioLanguage || '',
-                    'Language (Caption)': captionLanguages || 'n/a',
-                    Caption: item.text || item.caption || '',
-                    Hashtags: Array.isArray(item.hashtags)
-                        ? item.hashtags.map(h => typeof h === 'object' && h !== null && h.name ? h.name : String(h)).join(' ')
-                        : '',
-                    'Trending Sound (Yes/No)': (item.musicMeta && item.musicMeta.trending) ? 'Yes' : 'No',
-                    'Sound Name': item.musicMeta && item.musicMeta.musicName ? item.musicMeta.musicName : '',
-                    'Sound Type (Talking/Music/etc.)': item.audioType || '',
-                    'Location (if identifiable)': item.locationMeta && item.locationMeta.city ? item.locationMeta.city : '',
-                    'Content Style (AI)': item.postCategory || '',
-                    'CTA detected? (Yes/No)': item.ctaDetected ? 'Yes' : 'No',
-                    // The following fields are mapped based on the correct creator profile returned from the profile scrapper
-                    // Find the matching profile for this item by username (authorMeta.name)
-                    ...(function () {
-                        let profile = null;
-                        if (Array.isArray(profileScrapperData)) {
-                            // Try to match by authorMeta.name (case-insensitive)
-                            const username = item.authorMeta && item.authorMeta.name ? item.authorMeta.name.toLowerCase() : '';
-                            profile = profileScrapperData.find(p =>
-                                (p.username && p.username.toLowerCase() === username) ||
-                                (p.nickName && p.nickName.toLowerCase() === username)
-                            );
-                        }
-                        return {
-                            'Engagement Rate (%)': profile && profile.engagementRate ? Number(profile.engagementRate).toFixed(2) : '',
-                            Views: formatNum(item.playCount),
-                            Likes: formatNum(item.diggCount),
-                            Comments: formatNum(item.commentCount),
-                            Shares: formatNum(item.shareCount),
-                            // Saves: formatNum(item.saveCount),
-                            'Creator Name': profile && profile.nickName ? profile.nickName : (profile && profile.username ? profile.username : ''),
-                            'Creator Profile Link': profile && profile.profileUrl ? profile.profileUrl : '',
-                            'Creator Email': profile && profile.email ? profile.email : '',
-                            'Follower Count': profile && profile.fans ? formatNum(profile.fans) : '',
-                            'Usable for campaign?': item.usableForCampaign ? 'Yes' : 'No',
-                            'Internal Category': profile.creatorType || '',
-                            'Spoken Script': item.audioText || '',
-                        };
-                    })(),
-                };
-            });
-        }
-        const creatorDataset = await createEnrichedCreatorDataset( profileScrapperData, output);
+        //         // console.log("item", item);
+        //         return {
+        //             Thumbnail: item?.videoMeta?.coverUrl ? item.videoMeta.coverUrl : '',
+        //             'Video Link': item.webVideoUrl || '',
+        //             Platform: 'TikTok',
+        //             'Content Type': item.isAd ? 'Ad' : 'Organic',
+        //             'Upload Date': uploadDate,
+        //             'Video Duration (sec)': item.videoMeta.duration ? item.videoMeta.duration : '',
+        //             'Language (Audio)': item.audioLanguage || '',
+        //             'Language (Caption)': captionLanguages || 'n/a',
+        //             Caption: item.text || item.caption || '',
+        //             Hashtags: Array.isArray(item.hashtags)
+        //                 ? item.hashtags.map(h => typeof h === 'object' && h !== null && h.name ? h.name : String(h)).join(' ')
+        //                 : '',
+        //             'Trending Sound (Yes/No)': (item.musicMeta && item.musicMeta.trending) ? 'Yes' : 'No',
+        //             'Sound Name': item.musicMeta && item.musicMeta.musicName ? item.musicMeta.musicName : '',
+        //             'Sound Type (Talking/Music/etc.)': item.audioType || '',
+        //             'Location (if identifiable)': item.locationMeta && item.locationMeta.city ? item.locationMeta.city : '',
+        //             'Content Style (AI)': item.postCategory || '',
+        //             'CTA detected? (Yes/No)': item.ctaDetected ? 'Yes' : 'No',
+        //             // The following fields are mapped based on the correct creator profile returned from the profile scrapper
+        //             // Find the matching profile for this item by username (authorMeta.name)
+        //             ...(function () {
+        //                 let profile = null;
+        //                 if (Array.isArray(profileScrapperData)) {
+        //                     // Try to match by authorMeta.name (case-insensitive)
+        //                     const username = item.authorMeta && item.authorMeta.name ? item.authorMeta.name.toLowerCase() : '';
+        //                     profile = profileScrapperData.find(p =>
+        //                         (p.username && p.username.toLowerCase() === username) ||
+        //                         (p.nickName && p.nickName.toLowerCase() === username)
+        //                     );
+        //                 }
+        //                 return {
+        //                     'Engagement Rate (%)': profile && profile.engagementRate ? Number(profile.engagementRate).toFixed(2) : '',
+        //                     Views: formatNum(item.playCount),
+        //                     Likes: formatNum(item.diggCount),
+        //                     Comments: formatNum(item.commentCount),
+        //                     Shares: formatNum(item.shareCount),
+        //                     // Saves: formatNum(item.saveCount),
+        //                     'Creator Name': profile && profile.nickName ? profile.nickName : (profile && profile.username ? profile.username : ''),
+        //                     'Creator Profile Link': profile && profile.profileUrl ? profile.profileUrl : '',
+        //                     'Creator Email': profile && profile.email ? profile.email : '',
+        //                     'Follower Count': profile && profile.fans ? formatNum(profile.fans) : '',
+        //                     'Usable for campaign?': item.usableForCampaign ? 'Yes' : 'No',
+        //                     'Internal Category': profile.creatorType || '',
+        //                     'Spoken Script': item.audioText || '',
+        //                 };
+        //             })(),
+        //         };
+        //     });
+        // }
+        // const creatorDataset = await createEnrichedCreatorDataset( profileScrapperData, output);
 
-        // console.log(creatorDataset);
-                    try {
+        // // console.log(creatorDataset);
+        //             try {
 
-                // console.log("creatorDataset", creatorDataset);
+        //         // console.log("creatorDataset", creatorDataset);
 
-                // new creator agent url 
-                const newUrlCreator = `${process.env.WORKFLOW_CREATOR}?jobId=${jobId}`;
-                const responseCreator = await axios.post(newUrlCreator, JSON.stringify(creatorDataset), {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
+        //         // new creator agent url 
+        //         const newUrlCreator = `${process.env.WORKFLOW_CREATOR}?jobId=${jobId}`;
+        //         const responseCreator = await axios.post(newUrlCreator, JSON.stringify(creatorDataset), {
+        //             headers: {
+        //                 'Content-Type': 'application/json'
+        //             }
+        //         });
 
-                // console.log("response new flow", response.data);
-                // console.log('Calling n8n flow at URL:', responseCreator.data.url);
-                await Job.findByIdAndUpdate(jobId,
-                    { $set: { creatorSheetUrl: responseCreator.data.url, status: 'Completed', creatorStatus: "Completed" } },
-                    { new: true, runValidators: true }
-                );
-            }
-            catch (err) {
-                console.log("error api call",err.message    );
-                 await Job.findByIdAndUpdate(jobId,
-                    { $set: { status: 'Completed', creatorStatus: "Failed",creatorErrorMessage:err.message } },
-                    { new: true, runValidators: true }
-                );
-            }
+        //         // console.log("response new flow", response.data);
+        //         // console.log('Calling n8n flow at URL:', responseCreator.data.url);
+        //         await Job.findByIdAndUpdate(jobId,
+        //             { $set: { creatorSheetUrl: responseCreator.data.url, status: 'Completed', creatorStatus: "Completed" } },
+        //             { new: true, runValidators: true }
+        //         );
+        //     }
+        //     catch (err) {
+        //         console.log("error api call",err.message    );
+        //          await Job.findByIdAndUpdate(jobId,
+        //             { $set: { status: 'Completed', creatorStatus: "Failed",creatorErrorMessage:err.message } },
+        //             { new: true, runValidators: true }
+        //         );
+        //     }
         res.status(200).json({ message: 'Success.' });
         
     }
@@ -1079,3 +1179,83 @@ exports.creatorData=async(req,res)=>{
                 );
     }
 }
+
+exports.getSheetDataController = async (req, res) => {
+    try {
+        console.log("getSheet", req.query);
+        const { jobId, sheetType } = req.query;
+        console.log("jobId",  req.query.jobId);
+        console.log("sheetType",  sheetType);
+        const schema = Joi.object({
+            jobId: Joi.string().required(),
+            sheetType: Joi.string().valid('creator', 'content').required(),
+        });
+
+        const { error } = schema.validate(req.query);
+        if (error) {
+            return res.status(400).json({ error: error.details[0].message });
+        }
+
+        if (sheetType.toLowerCase() === 'creator') {
+            const creatorSheet = await CreatorSheetData.find({ jobId: new mongoose.Types.ObjectId(jobId) });
+            if (!creatorSheet || creatorSheet.length === 0) {
+                return res.status(404).json({ message: 'No data found for the given Job ID' });
+            }
+            // Convert the creatorSheet documents to a plain JavaScript object array
+            const creatorData = creatorSheet.map(doc => doc.toObject({ getters: true }));
+            // Remove unneeded properties from the creatorData objects
+            creatorData.forEach(data => {
+                delete data._id;
+                delete data.id;
+                delete data.__v;
+                delete data._status;
+                delete data.createdAt;
+                delete data.updatedAt;
+                delete data.jobId;
+            });
+            // Create a new workbook with a single sheet
+            const worksheet = xlsx.utils.json_to_sheet(creatorData);
+            const workbook = xlsx.utils.book_new();
+            xlsx.utils.book_append_sheet(workbook, worksheet, 'Creator Data');
+            // Generate the Excel file buffer
+            const file = xlsx.write(workbook, { bookType: 'xlsx', type: 'buffer' });
+            const filename = `Creator_Sheet_${jobId}.xlsx`;
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+            res.send(file);
+        } else if (sheetType.toLowerCase() === 'content') {
+            const contentSheet = await ContentSheetData.find({ jobId: new mongoose.Types.ObjectId(jobId) });
+            if (!contentSheet || contentSheet.length === 0) {
+                return res.status(404).json({ message: 'No data found for the given Job ID' });
+            }
+            contentSheet.forEach(data => {
+                delete data._id;
+                delete data.id;
+                delete data.__v;
+                delete data.createdAt;
+                delete data.updatedAt;
+                delete data.jobId;
+                delete data._doc;
+                delete data.$isNew;
+                delete data._status;
+                delete data.$__;
+                delete data['Spoken Script'];
+            });
+            // Create a new workbook with a single sheet
+            const worksheet = xlsx.utils.json_to_sheet(contentSheet);
+            const workbook = xlsx.utils.book_new();
+            xlsx.utils.book_append_sheet(workbook, worksheet, 'Content Data');
+            // Generate the Excel file buffer
+            const file = xlsx.write(workbook, { bookType: 'xlsx', type: 'buffer' });
+            const filename = `Content_Sheet_${jobId}.xlsx`;
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+            res.send(file);
+        } else {
+            return res.status(400).json({ message: 'Sheet Type must be content or creator' });
+        }
+    } catch (error) {
+        console.log('Error generating sheet:', error);
+        res.status(500).json({ message: 'Error generating sheet', error });
+    }
+};
