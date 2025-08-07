@@ -1002,6 +1002,12 @@ exports.deleteData = async (req, res) => {
         // Delete from ProfileData (profile scrapper collection)
         await ProfileData.deleteMany({ jobId });
 
+        // Delete from ContentSheetData (content sheet collection)
+        await ContentSheetData.deleteMany({ jobId });
+
+        // Delete from CreatorSheetData (creator sheet collection)
+        await CreatorSheetData.deleteMany({ jobId });
+
         // Delete from Job (job collection)
         await Job.deleteOne({ _id: jobId });
         res.status(200).json({ message: 'Data deleted successfully for the given jobId' });
