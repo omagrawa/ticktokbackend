@@ -786,18 +786,18 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
                 await ContentSheetData.insertMany(enrichedOutput);
 
                 // Ensure output is properly stringified for transmission
-                const response = await axios.post(newUrl, JSON.stringify(output), {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
+                // const response = await axios.post(newUrl, JSON.stringify(output), {
+                //     headers: {
+                //         'Content-Type': 'application/json'
+                //     }
+                // });
                 // console.log("response new flow", response.data.url);
                 // console.log('Calling n8n flow at URL:', n8nFlowUrl);
 
                 if(agents.toLowerCase() === 'content' || agents.toLowerCase() === 'both'){
 
                 await Job.findByIdAndUpdate(jobId,
-                    { $set: { finalSheetUrl: response.data.url, status: 'Completed', contentStatus: 'Completed', } },
+                    { $set: { finalSheetUrl: '', status: 'Completed', contentStatus: 'Completed', } },
                     { new: true, runValidators: true }
                 );
             }
@@ -810,17 +810,17 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
                 if(agents.toLowerCase() === 'creator' || agents.toLowerCase() === 'both'){
                     
                 const newUrlCreator = `${process.env.WORKFLOW_CREATOR}?jobId=${jobId}`;
-                const responseCreator = await axios.post(newUrlCreator, JSON.stringify(creatorDataset), {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
+                // const responseCreator = await axios.post(newUrlCreator, JSON.stringify(creatorDataset), {
+                //     headers: {
+                //         'Content-Type': 'application/json'
+                //     }
+                // });
 
                 // console.log("response new flow", response.data);
                 // console.log('Calling n8n flow at URL:', responseCreator.data.url);
                 if(agents.toLowerCase() === 'creator' || agents.toLowerCase() === 'both') {
                 await Job.findByIdAndUpdate(jobId,
-                    { $set: { creatorSheetUrl: responseCreator.data.url, status: 'Completed', creatorStatus: "Completed" } },
+                    { $set: { creatorSheetUrl: '', status: 'Completed', creatorStatus: "Completed" } },
                     { new: true, runValidators: true }
                 );
                 }
@@ -1003,10 +1003,10 @@ exports.deleteData = async (req, res) => {
         await ProfileData.deleteMany({ jobId });
 
         // Delete from ContentSheetData (content sheet collection)
-        await ContentSheetData.deleteMany({ jobId });
+        await ContentSheetData.deleteMany({ jobId: new mongoose.Types.ObjectId(jobId) });
 
         // Delete from CreatorSheetData (creator sheet collection)
-        await CreatorSheetData.deleteMany({ jobId });
+        await CreatorSheetData.deleteMany({ jobId: new mongoose.Types.ObjectId(jobId) });
 
         // Delete from Job (job collection)
         await Job.deleteOne({ _id: jobId });

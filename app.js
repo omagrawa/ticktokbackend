@@ -1,40 +1,62 @@
-require('dotenv').config()
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const scrapeRoutes = require('./routes/scrapeRoutes');
-const connectDB = require('./db'); // Import MongoDB connection
+const environmentRoutes = require('./routes/environmentRoutes');
+const connectDB = require('./db');
 
-const app = express();
+const app = express(); // ✅ MUST be before any app.use(...)
 const PORT = process.env.PORT || 3000;
 
 // Connect to MongoDB
 connectDB();
 
 // Middleware
-// Enable CORS to allow requests from different origins
 app.use(cors());
-// Parse JSON bodies
 app.use(express.json());
-// Parse URL-encoded bodies
 app.use(express.urlencoded({ extended: true }));
 
-// Set headers
+// Headers
 app.use((req, res, next) => {
-    // Set content type to JSON
-    res.setHeader('Content-Type', 'application/json');
-    // Allow requests from any origin
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    // Allow GET, POST, PUT, DELETE methods
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
-    // Allow Content-Type and Authorization headers
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    next();
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  next();
 });
 
-// Routes
+// API routes
 app.use('/api', scrapeRoutes);
+app.use('/api/environment', environmentRoutes);
+
+// Serve frontend
+app.use(express.static(path.resolve(__dirname, 'dist')));
+
+// Catch-all for Vue Router (history mode)
+app.get('/', (req, res) => {
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+  } else {
+    res.status(404).json({ error: 'API route not found' });
+  }
+});
+
+app.get('/settings', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+    } else {
+      res.status(404).json({ error: 'API route not found' });
+    }
+  });
+app.get('/data', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+    } else {
+      res.status(404).json({ error: 'API route not found' });
+    }
+  });
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
 });

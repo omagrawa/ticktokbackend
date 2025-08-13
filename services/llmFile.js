@@ -9,6 +9,7 @@ const path = require("path");
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = path.join(__dirname, '../ffmpeg');
 ffmpeg.setFfmpegPath(ffmpegPath);
+const EnvironmentVariable = require('../models/environmentVariableModel');
 
 /**
  * Initializes the OpenAI LLM with LangChain and processes user input.
@@ -24,8 +25,12 @@ async function processUserInput(userInput) {
     //     modelName: "gpt-4o-mini",
     //   });
 
+      const envVar = await EnvironmentVariable.findOne({ key: 'OPENAI_API_KEY' }).exec();
+      if (!envVar) {
+        throw new Error('OPENAI_API_KEY environment variable not found in database');
+      }
       const model = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY, // This is the default and can be omitted
+        apiKey: envVar.value, // This is the default and can be omitted
       });
 
     const message =[
@@ -172,8 +177,12 @@ async function processText(userInput) {
     ]}
             `;
 
+            const envVar = await EnvironmentVariable.findOne({ key: 'OPENAI_API_KEY' }).exec();
+            if (!envVar) {
+              throw new Error('OPENAI_API_KEY environment variable not found in database');
+            }
         const model = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY, // This is the default and can be omitted
+            apiKey: envVar.value, // This is the default and can be omitted
           });
 
         // Compose the message for the LLM
@@ -266,8 +275,13 @@ async function profileBioIdentifier(bio){
         1.always follow same structure structure.
         2. if any field is empty then return same structure wuth empty strings.
       `;
+
+      const envVar = await EnvironmentVariable.findOne({ key: 'OPENAI_API_KEY' }).exec();
+      if (!envVar) {
+        throw new Error('OPENAI_API_KEY environment variable not found in database');
+      }
       const model = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY, // This is the default and can be omitted
+        apiKey: envVar.value, // This is the default and can be omitted
       });
 
     const message =[

@@ -2,14 +2,14 @@ const { ApifyClient } = require('apify-client');
 const Job = require('../models/jobModel');
 const ScrapData = require('../models/scrapData');
 const ProfileData = require('../models/profileModel');
-const client = new ApifyClient({
-    token: process.env.APIFY_API_KEY
-});
-
-
+const EnvironmentVariable = require('../models/environmentVariableModel');
 
 exports.toktokScraper = async (query) => {
     try {
+        const environmentVariable = await EnvironmentVariable.findOne({ key: 'APIFY_API_KEY' }).select('value -_id');
+        const client = new ApifyClient({
+            token: environmentVariable.value
+        });
         // Run the Actor and wait for it to finish
         const run = await client.actor("clockworks/tiktok-scraper").call(query);
 
@@ -41,6 +41,10 @@ exports.toktokScraper = async (query) => {
 exports.profileScraper = async (input) => {
     // Run the Actor and wait for it to finish
     try {
+        const environmentVariable = await EnvironmentVariable.findOne({ key: 'APIFY_API_KEY' }).select('value -_id');
+        const client = new ApifyClient({
+            token: environmentVariable.value
+        });
         const query = {
             "excludePinnedPosts": false,
             "profileScrapeSections": [
@@ -83,6 +87,10 @@ exports.profileScraper = async (input) => {
 
 exports.apifyMusicScrapper=async(input)=>{
     try{
+        const environmentVariable = await EnvironmentVariable.findOne({ key: 'APIFY_API_KEY' }).select('value -_id');
+        const client = new ApifyClient({
+            token: environmentVariable.value
+        });
         const query = {
             "excludePinnedPosts": false,
             "profileScrapeSections": [
