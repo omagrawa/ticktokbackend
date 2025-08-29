@@ -110,9 +110,13 @@ try{
     const fileStream = fs.createReadStream(finalFile);
     console.log("📂 File stream created for:", finalFile);
 
+                const envVar = await EnvironmentVariable.findOne({ key: 'OPENAI_API_KEY' }).exec();
+            if (!envVar) {
+              throw new Error('OPENAI_API_KEY environment variable not found in database');
+            }
     // OpenAI transcription
     const model = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
+        apiKey: envVar.value,
     });
 
     const transcription = await model.audio.transcriptions.create({
