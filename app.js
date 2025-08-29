@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+require("./polyfill-file");
 const scrapeRoutes = require('./routes/scrapeRoutes');
 const environmentRoutes = require('./routes/environmentRoutes');
 const connectDB = require('./db');
