@@ -10,17 +10,21 @@ const { toktokScraper, profileScraper, } = require('../services/apifyService');
 const Joi = require('joi');
 const axios = require('axios');
 const ISO6391 = require('iso-639-1');
-const { processUserInput, processVoice, processText, videoToneIdentifier, profileBioIdentifier } = require('../services/llmFile');
+const { processUserInput, processVoice, processText, videoToneIdentifier, profileBioIdentifier, creatorKeywordsIdentifierInput } = require('../services/llmFile');
 const { classifyAudio } = require('../services/audioClassifier')
 const { getCountryGeoName } = require('../services/countryGeoName');
 
 // Define the schema for Excel row validation
+const countryEnum = [
+    "None", "AF", "AL", "DZ", "AS", "AD", "AO", "AI", "AG", "AR", "AM", "AU", "AT", "AZ", "BS", "BH", "BD", "BB", "BY", "BE", "BZ", "BJ", "BM", "BT", "BO", "BA", "BW", "BR", "VG", "BN", "BG", "BF", "BI", "KH", "CM", "CA", "CV", "KY", "TD", "CL", "CO", "CK", "CR", "HR", "CY", "CZ", "CD", "DK", "DJ", "DO", "EC", "EG", "SV", "EE", "ET", "FK", "FJ", "FI", "FR", "PF", "GA", "GE", "DE", "GH", "GI", "GR", "GL", "GD", "GP", "GT", "GN", "GW", "GY", "HN", "HK", "HU", "IS", "IN", "ID", "IQ", "IE", "IM", "IL", "IT", "CI", "JM", "JP", "JE", "KZ", "KE", "XK", "KW", "LA", "LV", "LB", "LS", "LR", "LY", "LT", "LU", "MO", "MG", "MW", "MY", "MV", "ML", "MT", "MH", "MQ", "MR", "MU", "MX", "MD", "MC", "MN", "ME", "MA", "MZ", "MM", "NA", "NR", "NP", "NL", "NZ", "NI", "NG", "MK", "NO", "OM", "PK", "PS", "PA", "PG", "PY", "PE", "PH", "PL", "PT", "PR", "QA", "CG", "RO", "RU", "RW", "RE", "KN", "LC", "MF", "PM", "VC", "SM", "SA", "SN", "RS", "SL", "SG", "SX", "SK", "SB", "SO", "ZA", "KR", "ES", "LK", "SR", "SZ", "SE", "CH", "TW", "TJ", "TZ", "TH", "TG", "TO", "TT", "TN", "TR", "TM", "TC", "TV", "VI", "UG", "UA", "AE", "GB", "US", "UY", "VE", "VN", "WF", "YE", "ZM", "ZW", "AX"
+];
+const countryEnumTitles = [
+    "None", "Afghanistan", "Albania", "Algeria", "American Samoa", "Andorra", "Angola", "Anguilla", "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bermuda", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "British Virgin Islands", "Brunei", "Bulgaria", "Burkina Faso", "Burundi", "Cambodia", "Cameroon", "Canada", "Cape Verde", "Cayman Islands", "Chad", "Chile", "Colombia", "Cook Islands", "Costa Rica", "Croatia", "Cyprus", "Czech Republic", "Democratic Republic of the Congo", "Denmark", "Djibouti", "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Estonia", "Ethiopia", "Falkland Islands", "Fiji", "Finland", "France", "French Polynesia", "Gabon", "Georgia", "Germany", "Ghana", "Gibraltar", "Greece", "Greenland", "Grenada", "Guadeloupe", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Honduras", "Hong Kong", "Hungary", "Iceland", "India", "Indonesia", "Iraq", "Ireland", "Isle of Man", "Israel", "Italy", "Ivory Coast", "Jamaica", "Japan", "Jersey", "Kazakhstan", "Kenya", "Kosovo", "Kuwait", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Lithuania", "Luxembourg", "Macao", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Martinique", "Mauritania", "Mauritius", "Mexico", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", "Myanmar [Burma]", "Namibia", "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Nigeria", "North Macedonia", "Norway", "Oman", "Pakistan", "Palestine", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Poland", "Portugal", "Puerto Rico", "Qatar", "Republic of the Congo", "Romania", "Russia", "Rwanda", "Réunion", "Saint Kitts and Nevis", "Saint Lucia", "Saint Martin", "Saint Pierre and Miquelon", "Saint Vincent and the Grenadines", "San Marino", "Saudi Arabia", "Senegal", "Serbia", "Sierra Leone", "Singapore", "Sint Maarten", "Slovakia", "Solomon Islands", "Somalia", "South Africa", "South Korea", "Spain", "Sri Lanka", "Suriname", "Swaziland", "Sweden", "Switzerland", "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Turks and Caicos Islands", "Tuvalu", "U.S. Virgin Islands", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Venezuela", "Vietnam", "Wallis and Futuna", "Yemen", "Zambia", "Zimbabwe", "Åland"
+];
+
 const excelRowSchema = Joi.object({
     'Hashtags': Joi.string().required().custom((value, helpers) => {
         const tags = value.split(',').map(tag => tag.trim());
-        // if (tags.some(tag => !tag.startsWith('#'))) {
-        //     return helpers.error('any.invalid');
-        // }
         return value;
     }, 'hashtag validation').messages({
         'string.empty': 'Hashtags cannot be empty',
@@ -29,9 +33,6 @@ const excelRowSchema = Joi.object({
     }),
     'Content_Type ': Joi.string().valid('Organic Post', 'ads').default('Organic Post'),
     'Language': Joi.string().optional().custom((value, helpers) => {
-        // if (value && !ISO6391.validate(value)) {
-        //     return helpers.error('any.invalid');
-        // }
         return value;
     }, 'language validation').messages({
         'any.invalid': 'Invalid language code'
@@ -44,9 +45,53 @@ const excelRowSchema = Joi.object({
     'Min_Followers': Joi.number().integer().min(0).default(0),
     'Max_Followers': Joi.number().integer().min(0).default(0),
     'Number_of_Required_Results': Joi.number().integer().min(1).max(1000).default(10),
-    'country': Joi.string().optional().allow(''),
+    'country': Joi.string().optional().allow('').custom((value, helpers) => {
+        if (!value || value.trim() === '') return value;
+        const input = value.trim().toLowerCase();
+        // Try to match by enum code
+        const codeIdx = countryEnum.findIndex(c => c.toLowerCase() === input);
+        if (codeIdx !== -1) return countryEnum[codeIdx];
+        // Try to match by enum title
+        const titleIdx = countryEnumTitles.findIndex(t => t.toLowerCase() === input);
+        if (titleIdx !== -1) return countryEnum[titleIdx];
+        return helpers.error('any.invalid');
+    }, 'country validation').messages({
+        'any.invalid': 'Country must match one of the allowed values'
+    }),
     'Description_Keywords': Joi.string().optional().allow('')
-}).unknown(true); // Allow additional fields
+}).unknown(true);
+
+const excelRowCreatorSchema = Joi.object({
+    'Language': Joi.string().optional().custom((value, helpers) => {
+        return value;
+    }, 'language validation').messages({
+        'any.invalid': 'Invalid language code'
+    }),
+    'Time_Period(7,14,30)': Joi.number().integer().min(0).default(0),
+    'Min_Average_Likes': Joi.number().integer().min(0).default(0),
+    'Min_Avg_Comment': Joi.number().integer().min(0).default(0),
+    'Min_Followers': Joi.number().integer().min(0).default(0),
+    'Max_Followers': Joi.number().integer().min(0).default(0),
+    'Contact_Info_Available': Joi.string().valid('yes', 'no').allow('', null).optional(),
+    'Number_of_Required_Results': Joi.number().integer().min(1).max(1000).default(10),
+    'country': Joi.string().optional().allow('').custom((value, helpers) => {
+        if (!value || value.trim() === '') return value;
+        const input = value.trim().toLowerCase();
+        // Try to match by enum code
+        const codeIdx = countryEnum.findIndex(c => c.toLowerCase() === input);
+        if (codeIdx !== -1) return countryEnum[codeIdx];
+        // Try to match by enum title
+        const titleIdx = countryEnumTitles.findIndex(t => t.toLowerCase() === input);
+        if (titleIdx !== -1) return countryEnum[titleIdx];
+        return helpers.error('any.invalid');
+    }, 'country validation').messages({
+        'any.invalid': 'Country must match one of the allowed values'
+    }),
+    'Description_Keywords': Joi.string().allow(''),
+    'Category': Joi.string().allow(''),
+})
+    .or('Description_Keywords', 'Category')
+    .unknown(true);
 
 // Define the schema validator
 const schema = Joi.object({
@@ -139,7 +184,7 @@ async function profileDataFunction(profile) {
 }
 
 // code to fetch the profile from the apify profile scrapper 
-async function profileScrapperFunction(jobId, jobData) {
+async function profileScrapperFunction(jobId, jobData, agents = 'both', Min_Average_Likes = '', Min_Avg_Comment = '', Contact_Info_Available = '') {
     try {
         // console.log("*************", jobData)
         // get the array of the data of videos. 
@@ -198,7 +243,7 @@ async function profileScrapperFunction(jobId, jobData) {
         }, {});
 
         // Now compute aggregated metrics and build final array
-        const result = Object.values(filterData).map(user => {
+        let result = Object.values(filterData).map(user => {
             // Sort posts by createTimeISO descending if needed
             const sortedPosts = user.posts.sort((a, b) => new Date(b.createTimeISO) - new Date(a.createTimeISO));
 
@@ -220,6 +265,32 @@ async function profileScrapperFunction(jobId, jobData) {
             };
         });
         // console.log(result)
+
+        // Apply creator-specific thresholds if provided
+        try {
+            if (agents && agents.toLowerCase() === 'creator') {
+                const minLikesThreshold = Min_Average_Likes !== '' && !isNaN(Number(Min_Average_Likes)) ? Number(Min_Average_Likes) : null;
+                const minCommentsThreshold = Min_Avg_Comment !== '' && !isNaN(Number(Min_Avg_Comment)) ? Number(Min_Avg_Comment) : null;
+                if (minLikesThreshold !== null || minCommentsThreshold !== null) {
+                    result = result.filter(p => {
+                        const meetsLikes = minLikesThreshold !== null ? (p.avgLikes >= minLikesThreshold) : true;
+                        const meetsComments = minCommentsThreshold !== null ? (p.avgComments >= minCommentsThreshold) : true;
+                        return meetsLikes && meetsComments;
+                    });
+                }
+                // If contact info is required, keep only profiles with any contact detail
+                if (Contact_Info_Available && String(Contact_Info_Available).toLowerCase() === 'yes') {
+                    result = result.filter(p => {
+                        const hasEmail = p.email && String(p.email).trim() !== '';
+                        const hasMobile = p.mobile && String(p.mobile).trim() !== '';
+                        const hasOther = p.other && String(p.other).trim() !== '';
+                        return hasEmail || hasMobile || hasOther;
+                    });
+                }
+            }
+        } catch (err) {
+            console.error('Error applying creator thresholds:', err);
+        }
 
         // get the connectoin details from profile bio . pass to llm to extract the details . 
         // 
@@ -391,17 +462,53 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
             'Min_Followers': minFollowers,
             'Max_Followers': maxFollowers,
             'Number_of_Required_Results': totalResult = 10,
-            country: country = '',
-            Description_Keywords: Description_Keywords = ''
+            country: country = country,
+            Description_Keywords: Description_Keywords = '',
+            Contact_Info_Available: Contact_Info_Available = '',
+            Min_Average_Likes:Min_Average_Likes='',
+            Min_Avg_Comment:Min_Avg_Comment='',
+            Category: Category = '',
         } = filters;
+        
 
-        const hshData = Hashtags.split(',').map(tag => tag.trim())
-
+        let queryPayload = {};
         // console.log("1")
         // result per page give the results per hashtag , for if user required 50 and there are 2 hastag then it will give 100 result. to 
         // fiox this we user this formaula Math.ceil((totalResult+(totalResult/100)*50)/hshData.length),
         // Prepare the query payload for the Apify API call
-        const queryPayload = {
+        if(agents.toLowerCase() === 'creator' && ((Description_Keywords && Description_Keywords != '') || (Category && Category != ''))){
+            // get the keywords.
+            
+            let keywordsToSend = '';
+            if (Description_Keywords && Description_Keywords !== '' && Category && Category !== '') {
+                keywordsToSend = `${Description_Keywords},${Category}`;
+            } else if (Description_Keywords && Description_Keywords !== '') {
+                keywordsToSend = Description_Keywords;
+            } else if (Category && Category !== '') {
+                keywordsToSend = Category;
+            }
+            Description_Keywords_Data = await creatorKeywordsIdentifierInput(`Find ${keywordsToSend.split(',').length*2} keywords for ${keywordsToSend}`);
+            console.log("Description_Keywords",JSON.parse(Description_Keywords_Data));
+            queryPayload = {
+                // hashtags: hshData,
+                resultsPerPage: Math.ceil((totalResult + (totalResult / 100) * 50) / JSON.parse(Description_Keywords_Data).keywords.length),
+                scrapeRelatedVideos: false,
+                shouldDownloadAvatars: false,
+                shouldDownloadCovers: false,
+                shouldDownloadMusicCovers: false,
+                shouldDownloadSlideshowImages: false,
+                shouldDownloadSubtitles: false,
+                shouldDownloadVideos: false,
+                proxyCountryCode:country || "None",
+            };
+
+            if (Description_Keywords_Data && Description_Keywords_Data != '') {
+                queryPayload.searchQueries = JSON.parse(Description_Keywords_Data)?.keywords.map(tag => tag.trim());
+                queryPayload.searchSection = "/video";
+            }
+        }else{
+        const hshData = Hashtags.split(',').map(tag => tag.trim())
+        queryPayload = {
             hashtags: hshData,
             resultsPerPage: Math.ceil((totalResult + (totalResult / 100) * 50) / hshData.length),
             scrapeRelatedVideos: false,
@@ -410,8 +517,20 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
             shouldDownloadMusicCovers: false,
             shouldDownloadSlideshowImages: false,
             shouldDownloadSubtitles: false,
-            shouldDownloadVideos: false
+            shouldDownloadVideos: false,
+            proxyCountryCode:country || "None",
         };
+
+        if (Description_Keywords && Description_Keywords != '') {
+            queryPayload.searchQueries = Description_Keywords.split(',').map(tag => tag.trim());
+            queryPayload.searchSection = "/video";
+        }
+        }
+
+        // return 0;
+
+    
+
         if (timePeriod > 0) {
             const timePeriodInDays = parseInt(timePeriod);
             // console.log('Time Period in Days:', timePeriodInDays);
@@ -422,13 +541,13 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
 
         let countryData = null;
         if (country && country != '') {
-            countryData = await getCountryGeoName(country);
+            // countryData = await getCountryGeoName(country);
             // console.log('Country Data:', countryData);
         }
-        if (Description_Keywords && Description_Keywords != '') {
-            queryPayload.searchQueries = Description_Keywords.split(',').map(tag => tag.trim());
-            queryPayload.searchSection = "/video";
-        }
+        // if (Description_Keywords_Data && Description_Keywords_Data != '') {
+        //     queryPayload.searchQueries = JSON.parse(Description_Keywords_Data)?.keywords.map(tag => tag.trim());
+        //     queryPayload.searchSection = "/video";
+        // }
         // console.log("2")
         // console.log('Query Payload:', queryPayload);
         let update = {};
@@ -451,7 +570,7 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
 
         let enrichedData = [];
         let output = [];
-        // console.log('Scraping data:', scrapDatas.data.length);
+        console.log('Scraping data:', scrapDatas.data.length);
         // language filter and 
 
         // console.log("scrapDatas",scrapDatas);
@@ -467,16 +586,19 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
                     ? languageFilter.includes(item.textLanguage.toLowerCase())
                     : true;
 
+                    console.log("language match",isLanguageMatch);
                 let isCountryMatch = true;
-                if (country && country.length > 0) {
-                    // const countryData =countryData
-                    if (countryData && item?.locationMeta) {
-                        isCountryMatch = item.locationMeta.countryCode === countryData.countryId;
-                    }
-                    else {
-                        isCountryMatch = false
-                    }
-                }
+                // if (country && country.length > 0) {
+                //     // const countryData =countryData
+                //     if (countryData && item?.locationMeta) {
+                //         isCountryMatch = item.locationMeta.countryCode === countryData.countryId;
+                //     }
+                //     else {
+                //         isCountryMatch = false
+                //     }
+                // }
+
+                console.log("counry match",isCountryMatch);
 
                 return (minViews > 0 ? item.playCount >= minViews : true) &&
                     (minComments > 0 ? item.commentCount >= minComments : true) &&
@@ -495,7 +617,7 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
             });
 
 
-            // console.log('Filtered Data:', filteredData);
+            console.log('Filtered Data:', filteredData);
             // Add jobId and Apify metadata to each item
             enrichedData = filteredData.map(item => ({
                 ...item,
@@ -702,7 +824,23 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
             //     { $set: { sheetUrl: "", status: 'Content Scrapped', creatorStatus: "Not Active" } },
             //     { new: true, runValidators: true }
             // );
-            const profileScrapperData = await profileScrapperFunction(jobId, enrichedData)
+            const profileScrapperData = await profileScrapperFunction(jobId, enrichedData, agents, Min_Average_Likes, Min_Avg_Comment, Contact_Info_Available)
+
+            // After applying creator thresholds, remove those fields from Job and update counts
+            try {
+                if (agents && agents.toLowerCase() === 'creator') {
+                    const validCreatorsCount = Array.isArray(profileScrapperData) ? profileScrapperData.length : 0;
+                    await Job.findByIdAndUpdate(jobId,
+                        { 
+                            $unset: { Min_Average_Likes: "", Min_Avg_Comment: "", Contact_Info_Available: "" },
+                            $set: { creatorFilteredCount: validCreatorsCount }
+                        },
+                        { new: true, runValidators: true }
+                    );
+                }
+            } catch (err) {
+                console.error('Failed to unset creator thresholds or update counts:', err);
+            }
 
             output = enrichedData.map(item => {
                 // Extract caption languages from subtitleLinks
@@ -909,10 +1047,19 @@ exports.processExcelFile = async (req, res) => {
 
         for (let i = 0; i < sheetData.length; i++) {
             const row = sheetData[i];
+            // Validate the row using the schema
+            console.log("Row:", row);
+            let error, value;
             // console.log('Row:', row);
-            const { error, value } = excelRowSchema.validate(row, { abortEarly: false });
+            if (agents.toLowerCase() === 'creator') {
+                ({ error, value } = excelRowCreatorSchema.validate(row, { abortEarly: false }));
+            } else {
+                ({ error, value } = excelRowSchema.validate(row, { abortEarly: false }));
+            }
 
             if (error) {
+                throw new Error(error);
+                console.log('Validation errors in row', i + 2, error.details);
                 validationErrors.push({
                     row: i + 2, // +2 because Excel is 1-indexed and we have a header row
                     errors: error.details.map(detail => ({
@@ -937,7 +1084,7 @@ exports.processExcelFile = async (req, res) => {
 
         // Process each validated row
         for (let i = 0; i < validatedData.length; i++) {
-            // console.log("Processing row:", validatedData[i]);
+            console.log("Processing row:", validatedData[i]);
             scrapeControllerFunction(jobDetails[i]._id, validatedData[i],agents);
             if(agents.toLowerCase() === 'creator'){
                 await Job.findByIdAndUpdate(jobDetails[i]._id,
@@ -963,11 +1110,11 @@ exports.processExcelFile = async (req, res) => {
             jobDetails
         });
 
-        // Delete the uploaded file
+        // Delete the uploaded file`
         deleteFile(filePath);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Error processing the Excel file', error });
+        res.status(500).json({ message: `Error processing the Excel file.${error?.message}`, error });
 
         // Delete the uploaded file in case of an error
         if (filePath) deleteFile(filePath);

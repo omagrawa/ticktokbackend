@@ -352,4 +352,44 @@ rules :
   }
 }
 
-module.exports = { processUserInput, processVoice, processText, videoToneIdentifier, profileBioIdentifier };
+async function creatorKeywordsIdentifierInput(userInput) {
+    
+  // const model = new ChatOpenAI({
+  //     apiKey: process.env.OPENAI_API_KEY,
+  //     temperature: 0.7,
+  //     modelName: "gpt-4o-mini",
+  //   });
+
+    const envVar = await EnvironmentVariable.findOne({ key: 'OPENAI_API_KEY' }).exec();
+    if (!envVar) {
+      throw new Error('OPENAI_API_KEY environment variable not found in database');
+    }
+    const model = new OpenAI({
+      apiKey: envVar.value, // This is the default and can be omitted
+    });
+
+  const message =[
+      {
+          role: 'system',
+          content: 'Your are an expert search keywords identifier for TikTok. Always return JSON only in the following format: { "keywords": ["keyword1", "keyword2", "keyword3"] }'
+      },
+      {
+          role: 'user',
+          content: userInput
+      }   
+  ]
+
+  const completion = await model.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages:message,
+      response_format:{type:"json_object"}
+    });
+    
+    console.log(completion.choices[0].message.content);
+
+  return completion.choices[0].message.content
+}
+
+// profileBioIdentifier("het")
+
+module.exports = { processUserInput,processVoice,processText,videoToneIdentifier,profileBioIdentifier,creatorKeywordsIdentifierInput };
