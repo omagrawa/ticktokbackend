@@ -199,6 +199,8 @@ async function profileScrapperFunction(jobId, jobData, agents = 'both', Min_Aver
 
         const profileData = await profileScraper(profileIds);
 
+        console.log("profile data ")
+
 
         const filterData = profileData.data.reduce((acc, profile) => {
             const author = profile.authorMeta;
@@ -264,7 +266,7 @@ async function profileScrapperFunction(jobId, jobData, agents = 'both', Min_Aver
                 lastPostTimestamp
             };
         });
-        // console.log(result)
+        console.log("******",result)
 
         // Apply creator-specific thresholds if provided
         try {
@@ -279,19 +281,20 @@ async function profileScrapperFunction(jobId, jobData, agents = 'both', Min_Aver
                     });
                 }
                 // If contact info is required, keep only profiles with any contact detail
-                if (Contact_Info_Available && String(Contact_Info_Available).toLowerCase() === 'yes') {
-                    result = result.filter(p => {
-                        const hasEmail = p.email && String(p.email).trim() !== '';
-                        const hasMobile = p.mobile && String(p.mobile).trim() !== '';
-                        const hasOther = p.other && String(p.other).trim() !== '';
-                        return hasEmail || hasMobile || hasOther;
-                    });
-                }
+                // if (Contact_Info_Available && String(Contact_Info_Available).toLowerCase() === 'yes') {
+                //     result = result.filter(p => {
+                //         const hasEmail = p.email && String(p.email).trim() !== '';
+                //         const hasMobile = p.mobile && String(p.mobile).trim() !== '';
+                //         const hasOther = p.other && String(p.other).trim() !== '';
+                //         return hasEmail || hasMobile || hasOther;
+                //     });
+                // }
             }
         } catch (err) {
             console.error('Error applying creator thresholds:', err);
         }
 
+        console.log("after result ",result)
         // get the connectoin details from profile bio . pass to llm to extract the details . 
         // 
         // loop through each profile and extract the contact details from the bio
@@ -462,7 +465,7 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
             'Min_Followers': minFollowers,
             'Max_Followers': maxFollowers,
             'Number_of_Required_Results': totalResult = 10,
-            country: country = country,
+            country: country = 'None',
             Description_Keywords: Description_Keywords = '',
             Contact_Info_Available: Contact_Info_Available = '',
             Min_Average_Likes:Min_Average_Likes='',
@@ -570,7 +573,7 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
 
         let enrichedData = [];
         let output = [];
-        console.log('Scraping data:', scrapDatas.data.length);
+        // console.log('Scraping data:', scrapDatas.data.length);
         // language filter and 
 
         // console.log("scrapDatas",scrapDatas);
@@ -833,7 +836,7 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
                     await Job.findByIdAndUpdate(jobId,
                         { 
                             $unset: { Min_Average_Likes: "", Min_Avg_Comment: "", Contact_Info_Available: "" },
-                            $set: { creatorFilteredCount: validCreatorsCount }
+                            $set: { afterFilterdataCount: validCreatorsCount }
                         },
                         { new: true, runValidators: true }
                     );
@@ -898,11 +901,11 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
                             // Saves: formatNum(item.saveCount),
                             'Creator Name': profile && profile.nickName ? profile.nickName : (profile && profile.username ? profile.username : ''),
                             'Creator Profile Link': profile && profile.profileUrl ? profile.profileUrl : '',
-                            'Creator Email': profile && profile.email ? profile.email : '',
-                            'Follower Count': profile && profile.fans ? formatNum(profile.fans) : '',
-                            'Usable for campaign?': item.usableForCampaign ? 'Yes' : 'No',
-                            'Internal Category': profile.creatorType || '',
-                            'Spoken Script': item.audioText || '',
+                            'Creator Email': profile && profile?.email ? profile.email : '',
+                            'Follower Count': profile && profile?.fans ? formatNum(profile.fans) : '',
+                            'Usable for campaign?': item?.usableForCampaign ? 'Yes' : 'No',
+                            'Internal Category': profile?.creatorType || '',
+                            'Spoken Script': item?.audioText || '',
                         };
                     })(),
                 };
@@ -912,6 +915,18 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
             let creatorDataset=[]
             // if(agents.toLowerCase() === 'creator' || agents.toLowerCase() === 'both'){
                 creatorDataset = await createEnrichedCreatorDataset(profileScrapperData, output);
+
+                // Filter creatorDataset if Contact_Info_Available is 'yes'
+                if (Contact_Info_Available && Contact_Info_Available.toLowerCase() === 'yes') {
+                    creatorDataset = creatorDataset.filter(item => item['Contactable?'] === 'Yes');
+                }
+
+                // Update the count of available records in the db (Job collection)
+                await Job.findByIdAndUpdate(
+                    jobId,
+                    { $set: { afterFilterdataCount: creatorDataset.length } },
+                    { new: true, runValidators: true }
+                );
             // }
 
             try {
@@ -992,7 +1007,7 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
         }
         return 0;
     } catch (err) {
-        console.error('Error in scrapeControllerFunction:', err);
+        console.error('Error in scrapeControllerFunction:', err, err.message);
         if( agents.toLowerCase() === 'creator'){
             await Job.findByIdAndUpdate(jobId,
                 { $set: { status: 'Profile Scrapper Failed', creatorStatus: "Failed", failedMessage: err.message } },
