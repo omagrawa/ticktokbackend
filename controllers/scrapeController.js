@@ -605,15 +605,15 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
 
                 return (minViews > 0 ? item.playCount >= minViews : true) &&
                     (minComments > 0 ? item.commentCount >= minComments : true) &&
-                    (videoLength > 0 ? item.videoMeta.duration <= videoLength : true) &&
-                    (minFollowers > 0 ? item.authorMeta.fans >= minFollowers : true) &&
-                    (maxFollowers > 0 ? item.authorMeta.fans <= maxFollowers : true) &&
+                    (videoLength > 0 ? item.videoMeta?.duration <= videoLength : true) &&
+                    (minFollowers > 0 ? item.authorMeta?.fans >= minFollowers : true) &&
+                    (maxFollowers > 0 ? item.authorMeta?.fans <= maxFollowers : true) &&
                     (timePeriod > 0 ?
-                        (timePeriod === '7' ? item.createTime * 1000 >= Date.now() - 7 * 24 * 60 * 60 * 1000 :
-                            timePeriod === '14' ? item.createTime * 1000 >= Date.now() - 14 * 24 * 60 * 60 * 1000 :
-                                timePeriod === '30' ? item.createTime * 1000 >= Date.now() - 30 * 24 * 60 * 60 * 1000 :
+                        (timePeriod === '7' ? item?.createTime * 1000 >= Date.now() - 7 * 24 * 60 * 60 * 1000 :
+                            timePeriod === '14' ? item?.createTime * 1000 >= Date.now() - 14 * 24 * 60 * 60 * 1000 :
+                                timePeriod === '30' ? item?.createTime * 1000 >= Date.now() - 30 * 24 * 60 * 60 * 1000 :
                                     true) // Default to true if no valid timePeriod is provided
-                        : (minLikes > 0 ? item.diggCount >= minLikes : true)) &&
+                        : (minLikes > 0 ? item?.diggCount >= minLikes : true)) &&
                     (contentType === 'Organic Post' ? item.isAd === false : true) && // Filter for Organic Post
                     isLanguageMatch && // Apply language filter
                     isCountryMatch; // Apply country filter
