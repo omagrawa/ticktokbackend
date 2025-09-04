@@ -52,7 +52,7 @@ exports.profileScraper = async (input) => {
             ],
             "profileSorting": "latest",
             "profiles": input,
-            "resultsPerPage": 10,
+            "resultsPerPage": 15,
             "shouldDownloadAvatars": false,
             "shouldDownloadCovers": false,
             "shouldDownloadSlideshowImages": false,

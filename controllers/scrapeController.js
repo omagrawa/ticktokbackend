@@ -67,14 +67,14 @@ const excelRowCreatorSchema = Joi.object({
     }, 'language validation').messages({
         'any.invalid': 'Invalid language code'
     }),
-    'Time_Period(7,14,30)': Joi.number().integer().min(0).default(0),
+    'Last_Post_Period(7,14,30)': Joi.number().integer().min(0).default(0),
     'Min_Average_Likes': Joi.number().integer().min(0).default(0),
     'Min_Avg_Comment': Joi.number().integer().min(0).default(0),
     'Min_Followers': Joi.number().integer().min(0).default(0),
     'Max_Followers': Joi.number().integer().min(0).default(0),
     'Contact_Info_Available': Joi.string().valid('yes', 'no').allow('', null).optional(),
     'Number_of_Required_Results': Joi.number().integer().min(1).max(1000).default(10),
-    'country': Joi.string().optional().allow('').custom((value, helpers) => {
+    'Location': Joi.string().optional().allow('').custom((value, helpers) => {
         if (!value || value.trim() === '') return value;
         const input = value.trim().toLowerCase();
         // Try to match by enum code
@@ -85,10 +85,11 @@ const excelRowCreatorSchema = Joi.object({
         if (titleIdx !== -1) return countryEnum[titleIdx];
         return helpers.error('any.invalid');
     }, 'country validation').messages({
-        'any.invalid': 'Country must match one of the allowed values'
+        'any.invalid': 'Location must match one of the allowed values'
     }),
     'Description_Keywords': Joi.string().allow(''),
     'Category': Joi.string().allow(''),
+    'Min_Engagement_Rate': Joi.number().integer().min(0).default(0),
 })
     .or('Description_Keywords', 'Category')
     .unknown(true);
@@ -184,7 +185,7 @@ async function profileDataFunction(profile) {
 }
 
 // code to fetch the profile from the apify profile scrapper 
-async function profileScrapperFunction(jobId, jobData, agents = 'both', Min_Average_Likes = '', Min_Avg_Comment = '', Contact_Info_Available = '') {
+async function profileScrapperFunction(jobId, jobData, agents = 'both', Min_Average_Likes = '', Min_Avg_Comment = '', Contact_Info_Available = '',Min_Engagement_Rate=0) {
     try {
         // console.log("*************", jobData)
         // get the array of the data of videos. 
@@ -453,7 +454,7 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
     try {
         // console.log("0")
         // Extract filters from the input
-        const {
+        let {
             Hashtags = [],
             'Content_Type': contentType,
             Language: language,
@@ -471,7 +472,13 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
             Min_Average_Likes:Min_Average_Likes='',
             Min_Avg_Comment:Min_Avg_Comment='',
             Category: Category = '',
+            'Min_Engagement_Rate':Min_Engagement_Rate=0
         } = filters;
+        if(agents.toLowerCase() == 'creator'){
+            if(filters.Location)country=filters.Location;
+            if(filters['Last_Post_Period(7,14,30)'])timePeriod=filters['Last_Post_Period(7,14,30)'];
+        }
+    
         
 
         let queryPayload = {};
@@ -827,7 +834,7 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
             //     { $set: { sheetUrl: "", status: 'Content Scrapped', creatorStatus: "Not Active" } },
             //     { new: true, runValidators: true }
             // );
-            const profileScrapperData = await profileScrapperFunction(jobId, enrichedData, agents, Min_Average_Likes, Min_Avg_Comment, Contact_Info_Available)
+            const profileScrapperData = await profileScrapperFunction(jobId, enrichedData, agents, Min_Average_Likes, Min_Avg_Comment, Contact_Info_Available,Min_Engagement_Rate)
 
             // After applying creator thresholds, remove those fields from Job and update counts
             try {
@@ -919,6 +926,9 @@ const scrapeControllerFunction = async (jobId, filters, agents) => {
                 // Filter creatorDataset if Contact_Info_Available is 'yes'
                 if (Contact_Info_Available && Contact_Info_Available.toLowerCase() === 'yes') {
                     creatorDataset = creatorDataset.filter(item => item['Contactable?'] === 'Yes');
+                }
+                if (Min_Engagement_Rate && Min_Engagement_Rate>0) {
+                    creatorDataset = creatorDataset.filter(item => item['Engagement Rate (%)'] >=Min_Engagement_Rate);
                 }
 
                 // Update the count of available records in the db (Job collection)
